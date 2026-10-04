@@ -22,29 +22,44 @@ export interface QuoteCache {
 }
 type Mapping = { symbol: string; mic?: string; type: string };
 function mapping(a: Instrument): Mapping | null {
-  if (a.expiry || a.currency !== "USD") return null;
+  if (a.identity_verified === false || a.expiry || a.currency !== "USD")
+    return null;
+  const alias = a.quote_aliases?.find((x) => x.provider === "twelve_data");
+  if (!alias) return null;
+  const symbol = alias.provider_symbol;
   if (
-    a.asset_key === "fx:EURUSD" &&
-    a.symbol === "EUR/USD" &&
-    a.asset_class === "fx" &&
-    !a.venue
+    (a.asset_class === "equity" || a.asset_class === "etf") &&
+    ["XNAS", "XNYS", "ARCX"].includes(a.venue ?? "") &&
+    a.asset_key === `equity:${a.venue}:${a.symbol}` &&
+    symbol === a.symbol &&
+    /^[A-Z0-9.]{1,20}$/.test(symbol)
   )
-    return { symbol: "EUR/USD", type: "Physical Currency" };
+    return {
+      symbol,
+      mic: a.venue!,
+      type: a.asset_class === "etf" ? "ETF" : "Common Stock",
+    };
   if (
-    a.asset_key === "equity:XNAS:AAPL" &&
-    a.symbol === "AAPL" &&
-    a.asset_class === "equity" &&
-    a.venue === "XNAS"
-  )
-    return { symbol: "AAPL", mic: "XNAS", type: "Common Stock" };
-  if (
-    a.asset_key === "crypto:BTC" &&
-    a.symbol === "BTC" &&
     a.asset_class === "crypto" &&
-    !a.venue
+    !a.venue &&
+    a.asset_key === `crypto:${a.symbol}` &&
+    symbol === `${a.symbol}/${a.currency}` &&
+    /^[A-Z0-9]{1,20}\/USD$/.test(symbol)
   )
-    return { symbol: "BTC/USD", type: "Digital Currency" };
+    return { symbol, type: "Digital Currency" };
+  if (
+    a.asset_class === "fx" &&
+    !a.venue &&
+    a.asset_key === `fx:${a.symbol.replace("/", "")}` &&
+    symbol === a.symbol &&
+    /^[A-Z]{3}\/USD$/.test(symbol)
+  )
+    return { symbol, type: "Physical Currency" };
   return null;
+}
+export function quoteRefreshSeconds(mappedCount: number) {
+  // Round up in ten-minute steps to stay below 720/day during continuous use.
+  return Math.max(600, Math.ceil((mappedCount * 86400) / 720 / 600) * 600);
 }
 function number(value: unknown): number | null {
   if (typeof value !== "number" && typeof value !== "string") return null;
@@ -59,25 +74,36 @@ export class TwelveDataQuoteService implements QuoteService {
     private readonly cache: QuoteCache,
     private readonly request: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
+    private readonly catalogSize: () => Promise<number> = async () => 3,
   ) {}
   async resolve(asset: Instrument) {
     return mapping(asset)?.symbol ?? null;
   }
   async health() {
+    const mapped = await this.catalogSize();
+    const refresh = quoteRefreshSeconds(mapped);
     return {
       configured: Boolean(this.key),
       provider: "Twelve Data",
       display_enabled: Boolean(this.key) && this.displayAllowed,
-      refresh_after_seconds: 600,
+      refresh_after_seconds: refresh,
+      mapped_assets: mapped,
       message: !this.key
         ? "API key not configured"
         : !this.displayAllowed
           ? "Key saved · display permission required"
-          : "Quotes enabled · refresh every 10 minutes",
+          : `Quotes enabled · refresh every ${refresh / 60} minutes`,
     };
   }
   async current(assets: Instrument[]): Promise<Quote[]> {
-    const empty = await new UnconfiguredQuoteService().current(assets);
+    const empty = (await new UnconfiguredQuoteService().current(assets)).map(
+      (q, i) => ({
+        ...q,
+        pricing_state: mapping(assets[i])
+          ? ("unavailable" as const)
+          : ("research_only" as const),
+      }),
+    );
     // Licensing is enforced server-side, even if a previous cached price exists.
     if (!this.key || !this.displayAllowed)
       return empty.map((q) => ({
@@ -87,6 +113,7 @@ export class TwelveDataQuoteService implements QuoteService {
           ? "API key not configured"
           : "Display permission required",
       }));
+    const refresh = quoteRefreshSeconds(await this.catalogSize());
     return Promise.all(
       assets.map(async (asset, i) => {
         const m = mapping(asset);
@@ -94,11 +121,16 @@ export class TwelveDataQuoteService implements QuoteService {
           ...empty[i],
           provider: "Twelve Data",
           provider_symbol: m?.symbol ?? null,
+          pricing_state: "unavailable" as const,
         };
         if (!m)
           return {
             ...unavailable,
-            unavailable_reason: "Instrument not covered by the test mapping",
+            pricing_state: "research_only" as const,
+            unavailable_reason:
+              asset.asset_class === "commodity_theme"
+                ? "Research only · no exact quoted instrument"
+                : "Research only · provider mapping unconfirmed",
           };
         // Include the immutable asset ID and all identity fields in the cache key.
         const cacheKey = JSON.stringify([
@@ -121,7 +153,8 @@ export class TwelveDataQuoteService implements QuoteService {
               }
             );
           let quote: Quote | null = null;
-          let retry = 60;
+          let retry = refresh;
+          let reason = "Provider request failed";
           try {
             const url = new URL("https://api.twelvedata.com/quote");
             url.searchParams.set("symbol", m.symbol);
@@ -135,10 +168,18 @@ export class TwelveDataQuoteService implements QuoteService {
             });
             if (response.ok) {
               const raw: unknown = await response.json();
-              if (raw && typeof raw === "object" && !Array.isArray(raw))
-                quote = this.parse(raw as Record<string, unknown>, asset, m);
+              if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+                const body = raw as Record<string, unknown>;
+                reason =
+                  this.rejection(body, asset, m) ??
+                  "Provider returned an invalid quote";
+                quote = this.parse(body, asset, m, refresh);
+              }
             }
-            if (response.status === 401 || response.status === 403) retry = 600;
+            if (!response.ok)
+              reason = `Provider rejected quote request (HTTP ${response.status})`;
+            if (response.status === 401 || response.status === 403)
+              retry = Math.max(600, refresh);
             if (response.status === 429) {
               const after = Number(response.headers.get("Retry-After"));
               retry = Math.min(
@@ -152,14 +193,17 @@ export class TwelveDataQuoteService implements QuoteService {
           await this.cache.complete(
             cacheKey,
             claim.lease,
-            quote,
-            quote ? 600 : retry,
+            quote ?? {
+              ...(claim.quote?.price != null ? claim.quote : unavailable),
+              unavailable_reason: reason,
+            },
+            quote ? refresh : retry,
           );
           return (
             quote ??
             claim.quote ?? {
               ...unavailable,
-              unavailable_reason: "Provider quote unavailable",
+              unavailable_reason: reason,
             }
           );
         } catch {
@@ -172,32 +216,52 @@ export class TwelveDataQuoteService implements QuoteService {
       }),
     );
   }
+  private rejection(
+    raw: Record<string, unknown>,
+    a: Instrument,
+    m: Mapping,
+  ): string | null {
+    if (raw.status === "error") {
+      const code = number(raw.code);
+      return code === 401
+        ? "Provider rejected API key"
+        : code === 403
+          ? "Provider denied instrument access"
+          : code === 429
+            ? "Provider account request limit reached"
+            : "Provider did not return this instrument";
+    }
+    if (raw.symbol !== m.symbol) return "Provider symbol mismatch";
+    if (raw.type !== undefined && raw.type !== m.type)
+      return "Provider instrument type mismatch";
+    if (m.mic && raw.mic_code !== m.mic) return "Provider venue mismatch";
+    if (
+      (m.mic && raw.currency !== a.currency) ||
+      (raw.currency !== undefined && raw.currency !== a.currency)
+    )
+      return "Provider currency mismatch";
+    const price = number(raw.close),
+      time = number(raw.last_quote_at);
+    if (price === null || price <= 0)
+      return "Provider returned an invalid price";
+    if (
+      time === null ||
+      time <= 0 ||
+      !Number.isInteger(time) ||
+      time * 1000 > this.now() + 60000
+    )
+      return "Provider returned an invalid quote time";
+    return null;
+  }
   private parse(
     raw: Record<string, unknown>,
     a: Instrument,
     m: Mapping,
+    refresh: number,
   ): Quote | null {
-    if (
-      raw.status === "error" ||
-      raw.symbol !== m.symbol ||
-      (raw.type !== undefined && raw.type !== m.type)
-    )
-      return null;
-    if (m.mic && (raw.mic_code !== m.mic || raw.currency !== a.currency))
-      return null;
-    if (raw.currency !== undefined && raw.currency !== a.currency) return null;
-    const price = number(raw.close),
-      seconds = number(raw.last_quote_at);
-    // timestamp/datetime are the daily candle's OPEN, not the last quote time.
-    if (
-      price === null ||
-      price <= 0 ||
-      seconds === null ||
-      seconds <= 0 ||
-      !Number.isInteger(seconds) ||
-      seconds * 1000 > this.now() + 60000
-    )
-      return null;
+    if (this.rejection(raw, a, m)) return null;
+    const price = number(raw.close)!,
+      seconds = number(raw.last_quote_at)!;
     const previous = number(raw.previous_close);
     const change = previous !== null && previous > 0 ? price - previous : null;
     const exchange =
@@ -206,6 +270,7 @@ export class TwelveDataQuoteService implements QuoteService {
         : null;
     return {
       asset_id: a.id,
+      pricing_state: "available",
       provider: "Twelve Data",
       provider_symbol: m.symbol,
       provider_venue: exchange,
@@ -229,7 +294,7 @@ export class TwelveDataQuoteService implements QuoteService {
           ? "previous_daily_close_provider_timezone"
           : "previous_daily_close",
       is_demo: false,
-      stale_after_seconds: 900,
+      stale_after_seconds: Math.max(900, refresh + 300),
       coverage_note: m.mic
         ? "Default US feed · approximately 5% of market volume; not consolidated"
         : a.asset_class === "crypto"

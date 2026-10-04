@@ -1,5 +1,33 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+test("research-only instruments remain visible on watchlist, asset detail and availability", async ({
+  page,
+}) => {
+  await page.goto("/watchlist");
+  const card = page
+    .locator("main .watch-item")
+    .filter({ has: page.getByRole("link", { name: "M6E", exact: true }) });
+  await expect(card.getByText("No live price", { exact: true })).toBeVisible();
+  await card.getByRole("link", { name: "M6E", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "M6E", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Research only · instrument details are unconfirmed.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "Asset availability" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".availability-list")
+      .getByText("Research only · no live price")
+      .first(),
+  ).toBeVisible();
+});
 test("archive search, revisions, watchlist and alert preferences survive reload", async ({
   page,
 }) => {
@@ -118,7 +146,7 @@ test("synthetic labeling, exact identity and unknown instruments", async ({
   await page.goto("/assets/10000000-0000-4000-8000-000000000004");
   await expect(page.getByText("theme:gold", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Unavailable", { exact: true }).last(),
+    page.getByText("No live price", { exact: true }).last(),
   ).toBeVisible();
 });
 test("unconfigured production build fails closed without demo content", async ({

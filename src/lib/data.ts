@@ -116,7 +116,12 @@ export async function history(id: string): Promise<Report[]> {
 }
 export async function assets(): Promise<Instrument[]> {
   if (isDemo) return demoAssets;
-  const { data, error } = await db!.from("assets").select("*").order("symbol");
+  const { data, error } = await db!
+    .from("assets")
+    .select(
+      "*,quote_aliases:asset_aliases(provider,provider_symbol,verified_at)",
+    )
+    .order("symbol");
   if (error) throw error;
   return data ?? [];
 }

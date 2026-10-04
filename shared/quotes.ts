@@ -7,6 +7,12 @@ export type Instrument = {
   venue: string | null;
   currency: string | null;
   expiry: string | null;
+  quote_aliases?: {
+    provider: string;
+    provider_symbol: string;
+    verified_at: string | null;
+  }[];
+  identity_verified?: boolean;
 };
 export type Quote = {
   asset_id: string;
@@ -27,6 +33,7 @@ export type Quote = {
   provider_venue?: string | null;
   coverage_note?: string | null;
   unavailable_reason?: string | null;
+  pricing_state?: "research_only" | "available" | "unavailable";
 };
 export type QuoteHealth = {
   configured: boolean;
@@ -34,6 +41,7 @@ export type QuoteHealth = {
   message: string;
   display_enabled?: boolean;
   refresh_after_seconds?: number;
+  mapped_assets?: number;
 };
 export type QuoteSnapshot = { quotes: Quote[]; health: QuoteHealth };
 export interface QuoteService {

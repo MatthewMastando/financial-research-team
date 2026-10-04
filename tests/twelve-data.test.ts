@@ -1,12 +1,27 @@
 import { describe, it, expect, vi } from "vitest";
-import { TwelveDataQuoteService, type QuoteCache } from "../shared/twelve-data";
+import {
+  TwelveDataQuoteService,
+  type QuoteCache,
+  quoteRefreshSeconds,
+} from "../shared/twelve-data";
 import { quoteState, type Quote } from "../shared/quotes";
 import { demoAssets } from "../src/lib/demo";
 
 const now = Date.parse("2026-10-02T15:00:00Z");
-const apple = demoAssets.find((a) => a.symbol === "AAPL")!;
-const fx = demoAssets.find((a) => a.symbol === "EUR/USD")!;
-const bitcoin = demoAssets.find((a) => a.symbol === "BTC")!;
+const candidates = demoAssets.map((a) => ({
+  ...a,
+  quote_aliases: [
+    {
+      provider: "twelve_data",
+      provider_symbol:
+        a.asset_class === "crypto" ? a.symbol + "/USD" : a.symbol,
+      verified_at: null,
+    },
+  ],
+}));
+const apple = candidates.find((a) => a.symbol === "AAPL")!;
+const fx = candidates.find((a) => a.symbol === "EUR/USD")!;
+const bitcoin = candidates.find((a) => a.symbol === "BTC")!;
 const sample = {
   symbol: "AAPL",
   currency: "USD",
@@ -47,6 +62,49 @@ function fixture(raw: unknown = sample, status = 200) {
   };
 }
 describe("Twelve Data adapter", () => {
+  it("resolves database mappings for new tickers and crypto without source edits", async () => {
+    for (const [key, symbol, assetClass, venue, providerSymbol, mic] of [
+      ["equity:XNAS:MU", "MU", "equity", "XNAS", "MU", "XNAS"],
+      ["equity:XNYS:VST", "VST", "equity", "XNYS", "VST", "XNYS"],
+      ["equity:ARCX:RSP", "RSP", "etf", "ARCX", "RSP", "ARCX"],
+      ["crypto:ETH", "ETH", "crypto", null, "ETH/USD", undefined],
+    ] as const) {
+      const asset = {
+        ...apple,
+        asset_key: key,
+        symbol,
+        asset_class: assetClass,
+        venue,
+        quote_aliases: [
+          {
+            provider: "twelve_data",
+            provider_symbol: providerSymbol,
+            verified_at: null,
+          },
+        ],
+      };
+      const { service } = fixture({
+        ...sample,
+        symbol: providerSymbol,
+        mic_code: mic,
+      });
+      expect((await service.current([asset]))[0].price).toBe(200.5);
+    }
+  });
+  it("does not spend credits on unverified identities even if an alias was supplied", async () => {
+    const { service, request } = fixture();
+    const [q] = await service.current([{ ...apple, identity_verified: false }]);
+    expect(q).toMatchObject({ price: null, pricing_state: "research_only" });
+    expect(request).not.toHaveBeenCalled();
+  });
+  it("scales polling to the catalog size within the free daily budget", () => {
+    expect(quoteRefreshSeconds(3)).toBe(600);
+    expect(quoteRefreshSeconds(20)).toBe(2400);
+    for (const size of [10, 20, 30, 100])
+      expect((size * 86400) / quoteRefreshSeconds(size)).toBeLessThanOrEqual(
+        720,
+      );
+  });
   it("checks identity, uses last quote time and attributes limited US coverage", async () => {
     const { service, request } = fixture();
     const [q] = await service.current([apple]);
@@ -184,7 +242,10 @@ describe("Twelve Data adapter", () => {
     expect(cache.complete).toHaveBeenCalledWith(
       expect.any(String),
       "lease",
-      null,
+      expect.objectContaining({
+        price: null,
+        unavailable_reason: "Provider rejected quote request (HTTP 401)",
+      }),
       600,
     );
   });

@@ -207,7 +207,7 @@ describe("authenticated durable ingestion", () => {
     ]);
     expect(revisions.map((x) => x.status).sort()).toEqual([201, 409]);
   });
-  it("leaves unknown futures explicitly unresolved", async () => {
+  it("registers unknown futures as research-only without inventing a contract", async () => {
     const receipt = await ingest(
       payload({
         assets: [
@@ -224,8 +224,178 @@ describe("authenticated durable ingestion", () => {
       "select asset_id,asset_key from report_assets where report_id=$1",
       [receipt.report_id],
     );
-    expect(r.rows[0].asset_id).toBeNull();
+    expect(r.rows[0].asset_id).toBeTruthy();
+    const known = (
+      await h.db.query("select * from assets where id=$1", [r.rows[0].asset_id])
+    ).rows[0];
+    expect(known).toMatchObject({
+      asset_class: "research_only",
+      identity_verified: false,
+      symbol: "M6E",
+      expiry: null,
+      venue: null,
+      currency: null,
+    });
+    await h.rpc.rpc("process_research_jobs", { p_limit: 50 });
+    expect(
+      (
+        await h.db.query("select * from watchlist_entries where asset_id=$1", [
+          known.id,
+        ])
+      ).rows,
+    ).toHaveLength(1);
     expect(r.rows[0].asset_key).toBe("future:CME:M6E:UNRESOLVED");
+  });
+  it("deduplicates concurrent unknown references and links both reports", async () => {
+    const asset_key = "crypto:NOT_ON_PROVIDER";
+    const reports = await Promise.all([
+      ingest(
+        payload({
+          assets: [
+            {
+              asset_key,
+              relationship: "subject",
+              watchlist_action: "suggest",
+              reason: "Source-backed test",
+            },
+          ],
+        }),
+      ),
+      ingest(
+        payload({
+          assets: [
+            {
+              asset_key,
+              relationship: "subject",
+              watchlist_action: "suggest",
+              reason: "Another test",
+            },
+          ],
+        }),
+      ),
+    ]);
+    const rows = await h.db.query(
+      "select id,identity_verified from assets where asset_key=$1",
+      [asset_key],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].identity_verified).toBe(false);
+    expect(
+      (
+        await h.db.query(
+          "select asset_id from report_assets where report_id=any($1::uuid[])",
+          [reports.map((r) => r.report_id)],
+        )
+      ).rows.every((r) => r.asset_id === rows.rows[0].id),
+    ).toBe(true);
+  });
+  it("backfills legacy suggestions without altering archived payloads or watchlist choices", async () => {
+    const asset_key = "theme:legacy_energy";
+    const input = payload({
+      assets: [
+        {
+          asset_key,
+          relationship: "subject",
+          watchlist_action: "suggest",
+          reason: "Legacy research",
+        },
+      ],
+    });
+    let report: { report_id: string };
+    await h.db.exec(
+      "alter table report_assets disable trigger register_report_asset",
+    );
+    try {
+      report = await ingest(input);
+    } finally {
+      await h.db.exec(
+        "alter table report_assets enable trigger register_report_asset",
+      );
+    }
+    await h.rpc.rpc("process_research_jobs", { p_limit: 50 });
+    const added = (
+      await h.db.query(
+        "insert into assets(asset_key,asset_class,name,symbol,identity_verified) values($1,'research_only','Legacy energy','Energy',false) returning id",
+        [asset_key],
+      )
+    ).rows[0];
+    expect(
+      (
+        await h.db.query(
+          "select asset_id from report_assets where report_id=$1",
+          [report!.report_id],
+        )
+      ).rows[0].asset_id,
+    ).toBe(added.id);
+    const entry = (
+      await h.db.query("select * from watchlist_entries where asset_id=$1", [
+        added.id,
+      ])
+    ).rows[0];
+    expect(entry).toBeTruthy();
+    await h.asUser(OWNER, (s) =>
+      s.query(
+        "update watchlist_entries set pinned=true,dismissed=true where id=$1",
+        [entry.id],
+      ),
+    );
+    await h.db.query("select private.link_catalog_asset($1)", [added.id]);
+    expect(
+      (
+        await h.db.query(
+          "select pinned,dismissed from watchlist_entries where id=$1",
+          [entry.id],
+        )
+      ).rows[0],
+    ).toEqual({ pinned: true, dismissed: true });
+    expect(
+      (
+        await h.db.query(
+          "select count(*)::int n from watchlist_evidence where entry_id=$1",
+          [entry.id],
+        )
+      ).rows[0].n,
+    ).toBe(1);
+    expect(
+      (
+        await h.db.query("select payload from reports where id=$1", [
+          report!.report_id,
+        ])
+      ).rows[0].payload.assets,
+    ).toEqual(input.assets);
+    await expect(
+      h.db.query(
+        "update report_assets set reason='changed' where report_id=$1",
+        [report!.report_id],
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      h.db.query("update report_assets set asset_id=null where report_id=$1", [
+        report!.report_id,
+      ]),
+    ).rejects.toThrow(/append-only/);
+  });
+  it("does not promote synthetic unknown assets into the production catalog", async () => {
+    await ingest(
+      payload({
+        is_demo: true,
+        assets: [
+          {
+            asset_key: "crypto:ONLY_SYNTHETIC",
+            relationship: "subject",
+            watchlist_action: "suggest",
+            reason: "Demo transport",
+          },
+        ],
+      }),
+    );
+    expect(
+      (
+        await h.db.query(
+          "select id from assets where asset_key='crypto:ONLY_SYNTHETIC'",
+        )
+      ).rows,
+    ).toHaveLength(0);
   });
 });
 describe("owner boundary and archive queries", () => {

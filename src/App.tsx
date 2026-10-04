@@ -168,7 +168,9 @@ function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
   const state = q ? quoteState(q) : "unavailable";
   const price =
     q?.price === null || q?.price === undefined
-      ? "Unavailable"
+      ? q?.pricing_state === "research_only"
+        ? "No live price"
+        : "Unavailable"
       : new Intl.NumberFormat("en-US", {
           maximumFractionDigits: q.price < 10 ? 4 : 2,
           minimumFractionDigits: 2,
@@ -193,7 +195,7 @@ function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
       )}
       <small className="quote-status">
         {q?.is_demo ? "Demo · " : ""}
-        {state}
+        {q?.pricing_state === "research_only" ? "Research only" : state}
         {!compact && q?.quote_time ? ` · ${format(q.quote_time)}` : ""}
       </small>
       {!compact && q?.change_basis && <small>{label(q.change_basis)}</small>}
@@ -211,7 +213,12 @@ function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
   );
 }
 function useAssets() {
-  return useQuery({ queryKey: ["assets"], queryFn: data.assets });
+  return useQuery({
+    queryKey: ["assets"],
+    queryFn: data.assets,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  });
 }
 function useQuotes(instruments: Instrument[]) {
   const qc = useQueryClient();
@@ -233,7 +240,7 @@ function useQuotes(instruments: Instrument[]) {
           "Refresh pending or provider request limit reached",
       )
         ? 15000
-        : 600000,
+        : (query.state.data?.health.refresh_after_seconds ?? 600) * 1000,
     refetchIntervalInBackground: false,
   });
   return { ...query, data: query.data?.quotes };
@@ -997,7 +1004,12 @@ function WatchEvidence({ id, assetKey }: { id: string; assetKey?: string }) {
   );
 }
 function Watchlist({ panel = false }: { panel?: boolean }) {
-  const q = useQuery({ queryKey: ["watchlist"], queryFn: data.watchlist });
+  const q = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: data.watchlist,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: false,
+  });
   const a = useAssets();
   const prices = useQuotes(a.data ?? []);
   const qc = useQueryClient();
@@ -1213,6 +1225,12 @@ function AssetDetail() {
               </div>
               <QuoteValue q={quotes.data?.[0]} />
             </div>
+            {asset.identity_verified === false && (
+              <p className="notice">
+                Research only · instrument details are unconfirmed. Research and
+                watchlist suggestions remain available.
+              </p>
+            )}
             <p className="notice">
               Historical prices are not configured. A chart will appear only
               when permitted provider data is available.
@@ -1365,6 +1383,58 @@ function Settings() {
       </LoadState>
       <DeskHealth />
     </>
+  );
+}
+function AssetCoverage() {
+  const assets = useAssets();
+  const quotes = useQuotes(assets.data ?? []);
+  return (
+    <section className="connection-settings asset-coverage">
+      <h2>Asset availability</h2>
+      <p className="muted">
+        {data.isDemo
+          ? "Synthetic preview results."
+          : "A validated quote confirms that your Twelve Data key returned the instrument. Research-only assets remain available for research and watchlist suggestions. Checks use the shared cache and account request limits."}
+      </p>
+      <button
+        className="subtle"
+        disabled={quotes.isFetching}
+        onClick={() => {
+          void assets.refetch();
+          void quotes.refetch();
+        }}
+      >
+        Refresh availability
+      </button>
+      {quotes.isError && (
+        <p className="error">
+          Provider availability could not be checked. Research assets remain
+          saved.
+        </p>
+      )}
+      <div className="availability-list">
+        {assets.data?.map((asset) => {
+          const q = quotes.data?.find((q) => q.asset_id === asset.id);
+          const researchOnly =
+            asset.identity_verified === false ||
+            asset.asset_class === "commodity_theme" ||
+            q?.pricing_state === "research_only";
+          return (
+            <div key={asset.id}>
+              <Link to={`/assets/${asset.id}`}>{asset.symbol}</Link>
+              <span>
+                {researchOnly
+                  ? "Research only · no live price"
+                  : (q?.unavailable_reason ??
+                    (q?.price != null
+                      ? `${data.isDemo ? "Demo" : "Quote received"} · ${quoteState(q)}`
+                      : "Awaiting provider check"))}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 function SettingsForm({ initial }: { initial: data.Settings }) {
@@ -1548,6 +1618,7 @@ function SettingsForm({ initial }: { initial: data.Settings }) {
           orders or track holdings.
         </p>
       </section>
+      <AssetCoverage />
       <section className="account-settings">
         <h2>Account</h2>
         <p>{auth.session?.user.email ?? "Local demo workspace"}</p>

@@ -1812,3 +1812,23 @@ button.text-link {
   color: #bfcbdd;
   margin: 8px 0 16px;
 }
+
+.asset-coverage .availability-list {
+  display: block;
+  margin-top: 16px;
+}
+.asset-coverage .availability-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.asset-coverage .availability-list > div > span {
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.asset-coverage .availability-list a {
+  flex-shrink: 0;
+}

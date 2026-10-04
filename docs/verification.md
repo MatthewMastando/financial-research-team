@@ -42,3 +42,7 @@ No production backup or restore was performed. The archive must not be represent
 ## Twelve Data verification update
 
 2026-10-04: 48 contract/API/database/Markdown/provider checks passed in PGlite and PostgreSQL 17, plus nine browser journeys and three Python client checks. The app and Edge Function type checks/build passed. Actual quote retrieval with the owner's secret remains a live acceptance check; neither fixture tests nor an ACTIVE deployment proves provider delivery.
+
+## Research-only registry update
+
+Every structured production report asset now receives a catalog link. Unknown identities have an explicit Research only state; price availability is independent of watchlist eligibility. Local tests cover simultaneous registration, unknown futures without invented expiry, exact-key legacy backfill, preserved report payload/evidence and pinned/dismissed choices, and synthetic isolation. Provider tests cover MU/VST/ETH/ETF database mappings and refresh scaling. Settings reports observed account access through actual quotes, not presumed subscription coverage.

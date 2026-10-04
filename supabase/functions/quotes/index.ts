@@ -31,6 +31,16 @@ const provider = new TwelveDataQuoteService(
       if (error) throw new Error("Quote cache unavailable");
     },
   },
+  fetch,
+  Date.now,
+  async () => {
+    const { count, error } = await cacheDb
+      .from("asset_aliases")
+      .select("id", { count: "exact", head: true })
+      .eq("provider", "twelve_data");
+    if (error) throw new Error("Quote catalog unavailable");
+    return count ?? 0;
+  },
 );
 Deno.serve(
   quoteHandler(
@@ -57,7 +67,9 @@ Deno.serve(
       return async (ids) => {
         const { data: assets, error: e } = await userDb
           .from("assets")
-          .select("*")
+          .select(
+            "*,quote_aliases:asset_aliases(provider,provider_symbol,verified_at)",
+          )
           .in("id", ids);
         if (e) throw new ApiError(503, "assets_unavailable");
         return assets ?? [];

@@ -1,9 +1,37 @@
 import { createClient } from "@supabase/supabase-js";
-import { origin } from "../_shared/client.ts";
-import { UnconfiguredQuoteService } from "../../../shared/quotes.ts";
+import { adminClient, origin } from "../_shared/client.ts";
+import {
+  TwelveDataQuoteService,
+  type QuoteClaim,
+} from "../../../shared/twelve-data.ts";
+import { twelveDataTrialDisplayAllowed } from "../_shared/deployment.ts";
 import { quoteHandler } from "../../../shared/quote-http.ts";
 import { ApiError } from "../../../shared/http.ts";
-// Configure a real provider only after coverage, entitlement and license verification.
+const cacheDb = adminClient();
+const provider = new TwelveDataQuoteService(
+  Deno.env.get("MARKET_DATA_API_KEY"),
+  Deno.env.get("TWELVE_DATA_DISPLAY_ALLOWED") === undefined
+    ? twelveDataTrialDisplayAllowed
+    : Deno.env.get("TWELVE_DATA_DISPLAY_ALLOWED") === "true",
+  {
+    async claim(key) {
+      const { data, error } = await cacheDb.rpc("claim_twelve_data_quote", {
+        p_key: key,
+      });
+      if (error) throw new Error("Quote cache unavailable");
+      return data as QuoteClaim;
+    },
+    async complete(key, lease, quote, retrySeconds) {
+      const { error } = await cacheDb.rpc("complete_twelve_data_quote", {
+        p_key: key,
+        p_lease: lease,
+        p_quote: quote,
+        p_retry_seconds: retrySeconds,
+      });
+      if (error) throw new Error("Quote cache unavailable");
+    },
+  },
+);
 Deno.serve(
   quoteHandler(
     async (token) => {
@@ -35,7 +63,7 @@ Deno.serve(
         return assets ?? [];
       };
     },
-    new UnconfiguredQuoteService(),
+    provider,
     origin(),
   ),
 );

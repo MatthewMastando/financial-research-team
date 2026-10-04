@@ -6,7 +6,7 @@ Later deployment update: the private synthetic Sites demo is published, and the 
 
 ## Recorded evidence
 
-- TypeScript application build and independent Edge Function type checking pass. Vite produces a static deployable build; the report Markdown reader loads separately. The main compressed bundle is about 161 KiB (uncompressed >500 KiB warning remains); no production network/browser performance claim is inferred from build size.
+- TypeScript application build and independent Edge Function type checking pass. Vite produces a static deployable build; the report Markdown reader loads separately. The current connected main compressed bundle is about 211 KiB (uncompressed >500 KiB warning remains); no production network/browser performance claim is inferred from build size.
 - 30 contract/API/database/Markdown tests run against both PGlite PostgreSQL WASM and disposable PostgreSQL 17. The real PostgreSQL run uses separate connections for simultaneous idempotent submissions, conflicting head revisions and concurrent job processing. Auth UID/session roles in this harness are fixtures, not a live Supabase Auth server.
 - Database cases cover unauthenticated/second-user denial, revoked/desk-scoped tokens, read scope, size/schema limits, replay across token rotation, conflicting content, atomic rollback, transactional jobs, preserved revisions/retractions, unresolved futures, receipt-based late arrivals, search and keyset pages, bounded context, demo/context-only exclusions, grouped alerts, preference preservation, retries, rate limiting, protected quote access, RLS and privileged function grants, and valid display timezones.
 - Nine browser checks use Chromium: navigation/search/revision history, persistent dismiss/restore/read preferences, timezone save/reload, synthetic labeling, exact/unknown instrument identity, unconfigured production fail-closed behavior, keyboard skip navigation and automated WCAG A/AA overview checks. All primary screens and the reader are exercised at 320, 390, 768 and 1440 px, with document-overflow assertions; long headlines and offline notices have separate checks.
@@ -31,10 +31,14 @@ Supabase CLI advisors were attempted on the disposable PostgreSQL cluster. CLI v
 
 ## Explicit limits
 
-Production prices are unavailable until an entitled provider is selected and its adapter implemented. No price-history chart, threshold alert, public audience, notification delivery, trading connection or holdings feature is claimed. External delivery remains disabled. Fixtures cannot trigger production watchlist suggestions or alerts.
+The Twelve Data Basic private-trial adapter is implemented and deployed after the owner confirmed display permission. Provider fixtures, cross-instance cache reservations, obsolete-writer fencing, UTC daily reset, rolling-minute caps and browser access denial are tested. Live quotes with the saved key remain unverified. No price-history chart, threshold alert, public audience, notification delivery, trading connection or holdings feature is claimed. External delivery remains disabled. Fixtures cannot trigger production watchlist suggestions or alerts.
 
 Realtime reconnect recovery and the 5-second target are implemented but have not been observed in a real Supabase deployment. Tests validate canonical pagination/deduplication and UI journeys; they do not prove packet-loss recovery in the user's account. Manual test transport does not prove unattended Grok writes. Source-backed production context and Chief of Staff references are enforced by code but still need an actual account run. A synthetic missing-desk brief is visible in the demo.
 
 The manifest shell avoids protected service-worker caches. Desktop/mobile browser layouts were checked; installability on actual iOS/Android, text zoom and platform push behavior remain unverified. Source includes designed loading/error/empty states, while live session expiry and network errors must still be exercised on the configured deployment.
 
 No production backup or restore was performed. The archive must not be represented as operationally durable until a configured backup and isolated restore exercise passes. Hosting/account/vendor choices remain open, and no paid resource was provisioned.
+
+## Twelve Data verification update
+
+2026-10-04: 48 contract/API/database/Markdown/provider checks passed in PGlite and PostgreSQL 17, plus nine browser journeys and three Python client checks. The app and Edge Function type checks/build passed. Actual quote retrieval with the owner's secret remains a live acceptance check; neither fixture tests nor an ACTIVE deployment proves provider delivery.

@@ -197,6 +197,16 @@ function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
         {!compact && q?.quote_time ? ` · ${format(q.quote_time)}` : ""}
       </small>
       {!compact && q?.change_basis && <small>{label(q.change_basis)}</small>}
+      {!compact && q?.provider && (
+        <small>
+          {q.provider}
+          {q.provider_venue ? ` · ${q.provider_venue}` : ""}
+        </small>
+      )}
+      {!compact && q?.coverage_note && <small>{q.coverage_note}</small>}
+      {!compact && q?.unavailable_reason && (
+        <small>{q.unavailable_reason}</small>
+      )}
     </div>
   );
 }
@@ -204,11 +214,36 @@ function useAssets() {
   return useQuery({ queryKey: ["assets"], queryFn: data.assets });
 }
 function useQuotes(instruments: Instrument[]) {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: ["quotes", instruments.map((a) => a.id)],
-    queryFn: () => data.quotes(instruments.map((a) => a.id)),
+    queryFn: async () => {
+      const result = await data.quoteSnapshot(instruments.map((a) => a.id));
+      qc.setQueryData(["quote-health"], result.health);
+      return result;
+    },
     enabled: instruments.length > 0,
-    refetchInterval: 60000,
+    staleTime: 600000,
+    // A concurrent screen can arrive during the first shared cache fill.
+    // Retry that unavailable result soon; server reservations still cap API use.
+    refetchInterval: (query) =>
+      query.state.data?.quotes.some(
+        (q) =>
+          q.unavailable_reason ===
+          "Refresh pending or provider request limit reached",
+      )
+        ? 15000
+        : 600000,
+    refetchIntervalInBackground: false,
+  });
+  return { ...query, data: query.data?.quotes };
+}
+function useQuoteHealth() {
+  return useQuery({
+    queryKey: ["quote-health"],
+    queryFn: async () => (await data.quoteSnapshot([])).health,
+    staleTime: 600000,
+    refetchInterval: 600000,
     refetchIntervalInBackground: false,
   });
 }
@@ -1333,6 +1368,7 @@ function Settings() {
   );
 }
 function SettingsForm({ initial }: { initial: data.Settings }) {
+  const quoteHealth = useQuoteHealth();
   const [value, setValue] = useState(initial);
   const [saved, setSaved] = useState(false);
   const qc = useQueryClient();
@@ -1495,8 +1531,14 @@ function SettingsForm({ initial }: { initial: data.Settings }) {
         </div>
         <div>
           <span>Market prices</span>
-          <Tag>Provider unconfigured</Tag>
+          <Tag>
+            {quoteHealth.isError
+              ? "Connection unavailable"
+              : (quoteHealth.data?.provider ??
+                (data.isDemo ? "Synthetic preview" : "Checking connection…"))}
+          </Tag>
         </div>
+        <p className="muted">{quoteHealth.data?.message}</p>
         <div>
           <span>External notifications</span>
           <Tag>Disabled</Tag>
@@ -1665,6 +1707,7 @@ export default function App() {
   );
 }
 function Workspace() {
+  const quoteHealth = useQuoteHealth();
   const loc = useLocation();
   const navigate = useNavigate();
   const [panel, setPanel] = useState(true);
@@ -1856,7 +1899,11 @@ function Workspace() {
           <ShieldCheck size={13} /> Private research archive
           <span>
             Market data:{" "}
-            {data.isDemo ? "synthetic preview" : "provider unconfigured"}
+            {data.isDemo
+              ? "synthetic preview"
+              : quoteHealth.isError
+                ? "connection unavailable"
+                : (quoteHealth.data?.message ?? "checking connection…")}
           </span>
         </footer>
       </div>

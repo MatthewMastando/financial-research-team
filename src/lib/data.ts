@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Report } from "../../shared/report";
-import type { Instrument, Quote } from "../../shared/quotes";
+import type { Instrument, Quote, QuoteSnapshot } from "../../shared/quotes";
 import { demoAssets, demoQuotes, demoReports } from "./demo";
 export const isDemo = import.meta.env.VITE_DEMO_MODE === "true";
 export const db =
@@ -120,9 +120,17 @@ export async function assets(): Promise<Instrument[]> {
   if (error) throw error;
   return data ?? [];
 }
-export async function quotes(ids: string[]): Promise<Quote[]> {
-  if (isDemo) return demoQuotes.filter((q) => ids.includes(q.asset_id));
-  if (!ids.length) return [];
+export async function quoteSnapshot(ids: string[]): Promise<QuoteSnapshot> {
+  if (isDemo)
+    return {
+      quotes: demoQuotes.filter((q) => ids.includes(q.asset_id)),
+      health: {
+        configured: false,
+        provider: null,
+        message: "Synthetic preview",
+        refresh_after_seconds: 600,
+      },
+    };
   const {
     data: { session },
   } = await db!.auth.getSession();
@@ -137,7 +145,10 @@ export async function quotes(ids: string[]): Promise<Quote[]> {
     },
   );
   if (!response.ok) throw new Error("Quote connection unavailable");
-  return (await response.json()).quotes;
+  return await response.json();
+}
+export async function quotes(ids: string[]): Promise<Quote[]> {
+  return (await quoteSnapshot(ids)).quotes;
 }
 export async function watchlist(): Promise<WatchEntry[]> {
   if (isDemo)

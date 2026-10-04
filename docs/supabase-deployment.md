@@ -6,12 +6,12 @@ Deployment and catalog verification: 2026-10-04.
 
 ## Applied and verified
 
-- Five migrations: initial research, read paths, settings integrity, hosted processing schedule, and hosted privilege hardening. Local filenames match the hosted migration versions so later CLI deployments do not replay them.
-- Seventeen public application tables and three private operational tables have RLS enabled. Browser grants are explicitly narrowed after Supabase's broad default grants: authenticated users can read under owner policies and update only supported preference columns. Anonymous users cannot read application tables or execute privileged RPCs.
-- `research-api`, `quotes`, and `process-jobs` Edge Functions are ACTIVE. Gateway JWT validation is intentionally disabled because these functions enforce custom bot, owner-session, and worker authorization. `quotes` still returns unavailable production prices until a provider is configured.
+- Six migrations: initial research, read paths, settings integrity, hosted processing schedule, hosted privilege hardening, and Twelve Data quote cache. Local filenames match the hosted migration versions so later CLI deployments do not replay them.
+- Seventeen public application tables and five private operational tables have RLS enabled. Browser grants are explicitly narrowed after Supabase's broad default grants: authenticated users can read under owner policies and update only supported preference columns. Anonymous users cannot read application tables or execute privileged RPCs.
+- `research-api`, `quotes`, and `process-jobs` Edge Functions are ACTIVE. Gateway JWT validation is intentionally disabled because these functions enforce custom bot, owner-session, and worker authorization. `quotes` version 3 includes the Twelve Data private-trial adapter.
 - Reports, alerts, watchlist entries, and desk runs are registered with Supabase Realtime.
 - `market-research-derivation` runs each minute. Hosted Cron history shows successful executions, and a bounded processing call returns zero failures with the empty queue.
-- Hosted security advisors report only informational RLS-without-policy findings on the three intentionally server-only private tables. There are no error/warning findings. [Supabase's explanation](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy). Performance advisors report unused indexes on this newly empty database; these are retained for the designed queries.
+- The initial advisor check found only informational RLS-without-policy findings. The latest check also reports disabled leaked-password protection in Auth; [enable it where supported by the project plan](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). The five private tables intentionally have no browser policies. [Supabase's explanation](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy). Performance advisors report unused indexes on this newly empty database; these are retained for the designed queries.
 - Production frontend configuration is saved in ignored `.env.production.local` using only the public project URL and publishable key. No server secret is embedded in the frontend. The public CORS origin defaults to the private Sites demo origin; `APP_ORIGIN` can override it when the production origin changes.
 
 ## Owner and connected frontend update
@@ -24,8 +24,16 @@ No reports, bot tokens, fabricated research, or holdings were inserted during de
 
 ## Verification limits
 
-Thirty contract/database/Markdown tests pass with a harness that now reproduces hosted Supabase's broad default public-table grants. Application build and independent Edge Function type checks pass.
+Forty-eight contract/database/Markdown/provider tests pass with a harness that now reproduces hosted Supabase's broad default public-table grants. Application build and independent Edge Function type checks pass.
 
 The managed workspace's outbound proxy denies direct access to this project's HTTPS API and the Supabase changelog URL. Native Supabase tools confirm deployment and database behavior, but function HTTP invocation, live Auth/Realtime, browser-to-backend access, and Grok submissions remain unverified. Current API-key and Cron documentation was read through Supabase's documentation connector. No network-policy bypass was attempted.
 
 Backups/restore, real price coverage, and unattended Grok routines remain release gates.
+
+## Twelve Data trial update
+
+The owner reported saving `MARKET_DATA_API_KEY` in Edge Function Secrets and confirmed Twelve Data permits display for the private trial. The adapter reads this secret only at runtime; its value was never accessed by Codex. It maps EUR/USD, AAPL on XNAS, and default BTC/USD; Gold remains an uncovered theme. Shared cache/budget migration `20261004183751_twelve_data_quote_cache.sql` is applied. Hosted catalog checks confirm RLS, no anonymous/authenticated cache reads, and service-role-only cache RPC execution. The `quotes` deployment is ACTIVE at version 3.
+
+Local verification passed 48 tests against both PGlite and PostgreSQL 17, nine Chromium journeys, three Python client checks, application build and independent Edge type checks. The provider contract fixtures match the documented quote response, including its absent optional instrument type and last-minute quote timestamp. These checks do not prove the saved key is valid, its actual exchange coverage, or successful live browser delivery. Workspace network policy still blocks direct Supabase/Twelve Data HTTP invocation.
+
+The updated owner-private Site publication succeeded for source commit `3069777b394189cc1da42ac628609cc4cde3e155`, saved version `appgprj_6ac2742ca1548191a1f1c9298ade2336~appgver_8dc1a39f6dfc81918b2757dbe606cf34`, deployment `appgdep_6ac29e3dd15c819199581f0a3bcaec36`. The audience remains owner-only. Hosted function source was retrieved and matched the uploaded tested files exactly.

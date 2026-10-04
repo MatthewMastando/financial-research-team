@@ -502,6 +502,95 @@ describe("repeatable watchlist and alerts", () => {
 });
 
 describe("protected quote endpoint", () => {
+  it("coalesces quote leases, fences late writers, and restricts cache RPCs to service role", async () => {
+    const key = "lease-test";
+    const claim = async () =>
+      (await h.db.query("select claim_twelve_data_quote($1) as value", [key]))
+        .rows[0].value;
+    const first = await claim();
+    expect(first.lease).toBeTruthy();
+    expect((await claim()).lease).toBeUndefined();
+    await h.db.query(
+      "update private.quote_cache set lease_until = now() - interval '1 second' where cache_key = $1",
+      [key],
+    );
+    const second = await claim();
+    expect(second.lease).not.toBe(first.lease);
+    await h.db.query("select complete_twelve_data_quote($1, $2, $3, 600)", [
+      key,
+      first.lease,
+      JSON.stringify({ price: 999 }),
+    ]);
+    expect(
+      (
+        await h.db.query(
+          "select quote from private.quote_cache where cache_key = $1",
+          [key],
+        )
+      ).rows[0].quote,
+    ).toBeNull();
+    await h.db.query("select complete_twelve_data_quote($1, $2, $3, 600)", [
+      key,
+      second.lease,
+      JSON.stringify({ price: 100 }),
+    ]);
+    expect(await claim()).toMatchObject({ quote: { price: 100 } });
+    for (const owner of [null, OWNER, OTHER]) {
+      await expect(
+        h.asUser(owner, (s) =>
+          s.query("select claim_twelve_data_quote('denied')"),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        h.asUser(owner, (s) => s.query("select * from private.quote_cache")),
+      ).rejects.toThrow();
+      await expect(
+        h.asUser(owner, (s) =>
+          s.query("select complete_twelve_data_quote('denied', $1, null, 60)", [
+            randomUUID(),
+          ]),
+        ),
+      ).rejects.toThrow();
+    }
+  });
+  it("reserves credits across keys, enforces rolling-minute and UTC daily caps", async () => {
+    await h.db.exec(
+      "update private.quote_budget set daily_used = 0, day = (now() at time zone 'UTC')::date, request_times = '{}'",
+    );
+    const claims = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        h.db.query("select claim_twelve_data_quote($1) as value", [
+          "minute-" + i,
+        ]),
+      ),
+    );
+    expect(claims.filter((r) => r.rows[0].value.lease)).toHaveLength(8);
+    await h.db.exec(
+      "update private.quote_budget set daily_used = 749, request_times = '{}'",
+    );
+    expect(
+      (await h.db.query("select claim_twelve_data_quote('day-last') as value"))
+        .rows[0].value.lease,
+    ).toBeTruthy();
+    expect(
+      (
+        await h.db.query(
+          "select claim_twelve_data_quote('day-blocked') as value",
+        )
+      ).rows[0].value.lease,
+    ).toBeUndefined();
+    await h.db.exec(
+      "update private.quote_budget set day = (now() at time zone 'UTC')::date - 1",
+    );
+    expect(
+      (await h.db.query("select claim_twelve_data_quote('day-reset') as value"))
+        .rows[0].value.lease,
+    ).toBeTruthy();
+    expect(
+      (await h.db.query("select daily_used from private.quote_budget")).rows[0]
+        .daily_used,
+    ).toBe(1);
+  });
   it("authenticates first and refuses a second user under owner RLS", async () => {
     const { quoteHandler } = await import("../shared/quote-http");
     const { UnconfiguredQuoteService } = await import("../shared/quotes");

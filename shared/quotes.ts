@@ -24,15 +24,22 @@ export type Quote = {
   change_basis: string | null;
   is_demo: boolean;
   stale_after_seconds: number | null;
+  provider_venue?: string | null;
+  coverage_note?: string | null;
+  unavailable_reason?: string | null;
 };
+export type QuoteHealth = {
+  configured: boolean;
+  provider: string | null;
+  message: string;
+  display_enabled?: boolean;
+  refresh_after_seconds?: number;
+};
+export type QuoteSnapshot = { quotes: Quote[]; health: QuoteHealth };
 export interface QuoteService {
   resolve(asset: Instrument): Promise<string | null>;
   current(assets: Instrument[]): Promise<Quote[]>;
-  health(): Promise<{
-    configured: boolean;
-    provider: string | null;
-    message: string;
-  }>;
+  health(): Promise<QuoteHealth>;
 }
 export function quoteState(
   q: Quote,

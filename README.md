@@ -2,7 +2,7 @@
 
 Private financial research workspace for one authorized owner. React/TypeScript/Vite frontend; Supabase Auth, Postgres, Realtime and Edge Functions. Four Grok desks submit research; a Chief of Staff bot submits a synthesis. No xAI agent replacement, trading integration, invented holdings or external notifications.
 
-[Open the private Market Research app](https://market-research-demo-matthew.matthew-mastando.chatgpt.site). The published build is connected to Supabase with demo mode disabled and a provisioned owner login. Research remains empty until real reports arrive, and quotes remain unavailable until a provider is configured. The Sites source checkout is `/workspace/sites/market-research-demo`, with its existing project identity in `.openai/hosting.json`. Local synthetic previews remain available through the demo commands below.
+[Open the private Market Research app](https://market-research-demo-matthew.matthew-mastando.chatgpt.site). The published build is connected to Supabase with demo mode disabled and a provisioned owner login. Research remains empty until real reports arrive, and Twelve Data test quotes are integrated for EUR/USD, AAPL and BTC/USD; live delivery still needs verification in the owner’s browser. The Sites source checkout is `/workspace/sites/market-research-demo`, with its existing project identity in `.openai/hosting.json`. Local synthetic previews remain available through the demo commands below.
 
 ## Run locally
 
@@ -37,7 +37,7 @@ npm run test:browser
 - Overview, archive search/filter/pagination, full report reader, revision history, asset detail, watchlist preferences, grouped alerts, timezone and schedule preferences.
 - Owner authorization independent of user metadata; immutable research and normalized evidence; RLS; scoped hashed bot tokens; rate limits; atomic idempotent ingestion; revision conflict protection; durable retryable derivation jobs.
 - Authenticated context retrieval and run-status recording, reusable Python submission client and [five desk skills](docs/bots/README.md).
-- Provider-neutral quote contract with accurately unavailable production quotes. Demo quotes are isolated fixtures. Real provider selection remains open.
+- Protected Twelve Data quote adapter with shared caching, Basic-plan credit reservations, exact test-instrument mappings, timestamps and feed attribution. Demo quotes remain isolated fixtures.
 - Responsive manifest-based web shell. No service worker caches private responses. Private TanStack Query state clears on sign-out.
 
 ## Status

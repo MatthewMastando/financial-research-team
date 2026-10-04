@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "submission_id": "synthetic-transport-001",
+  "desk_slug": "macro",
+  "report_type": "morning_scan",
+  "researched_at": "2026-10-04T11:20:00Z",
+  "title": "Synthetic ingestion fixture",
+  "summary": "A transport fixture. No market claim or recommendation is made.",
+  "body_markdown": "## Research note\n\nThis is **synthetic demonstration content**, not a current market assessment.\n\nThe research framework separates observed evidence from an interpretation and a possible scenario. The asset association is illustrative.\n\n### What to monitor\n\n- Whether the next release changes the original premise.\n- Whether independent evidence supports the interpretation.\n- Whether timing and instrument identity are clear.\n\nNo position, order, or investment decision is implied.",
+  "what_changed": "A new illustrative question has been added to the research record.",
+  "importance": "normal",
+  "importance_reason": "Synthetic material-development example.",
+  "time_horizon": "weeks",
+  "thesis": null,
+  "invalidation": null,
+  "risks": [
+    "The fixture contains no live market evidence.",
+    "A broad market theme is not an exact tradable instrument."
+  ],
+  "evidence_gap": null,
+  "assets": [
+    {
+      "asset_key": "equity:XNAS:AAPL",
+      "relationship": "context",
+      "watchlist_action": "none",
+      "reason": "Illustrative association only."
+    }
+  ],
+  "sources": [
+    {
+      "source_key": "fixture",
+      "url": "https://example.com/research-fixture",
+      "title": "Synthetic source · example.com",
+      "published_at": null,
+      "accessed_at": "2026-10-04T12:00:00Z"
+    }
+  ],
+  "claims": [
+    {
+      "text": "This example is a scenario for testing the research workflow.",
+      "kind": "scenario",
+      "source_keys": ["fixture"]
+    }
+  ],
+  "catalysts": [],
+  "supersedes_report_id": null,
+  "related_report_ids": [],
+  "event_key": "demo-event-1",
+  "is_demo": true,
+  "disagreements": [],
+  "missing_desks": []
+}

@@ -1,0 +1,429 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "submission_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[\\w.-]+$"
+    },
+    "desk_slug": {
+      "type": "string",
+      "enum": [
+        "macro",
+        "commodities",
+        "equities",
+        "crypto",
+        "chief_of_staff"
+      ]
+    },
+    "report_type": {
+      "type": "string",
+      "enum": [
+        "morning_scan",
+        "evening_wrap",
+        "breaking_update",
+        "thesis_revision",
+        "morning_brief"
+      ]
+    },
+    "researched_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "body_markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50000
+    },
+    "what_changed": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "importance": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "elevated",
+        "urgent"
+      ]
+    },
+    "importance_reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "time_horizon": {
+      "type": "string",
+      "enum": [
+        "intraday",
+        "days",
+        "weeks",
+        "months",
+        "structural",
+        "unspecified"
+      ]
+    },
+    "thesis": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "invalidation": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "risks": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "evidence_gap": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "assets": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "asset_key": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 120,
+            "pattern": "^[a-z][a-z_]*:[A-Za-z0-9._:/-]+$"
+          },
+          "relationship": {
+            "type": "string",
+            "enum": [
+              "subject",
+              "exposure",
+              "context"
+            ]
+          },
+          "watchlist_action": {
+            "type": "string",
+            "enum": [
+              "suggest",
+              "none"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "asset_key",
+          "relationship",
+          "watchlist_action",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sources": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "accessed_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "source_key",
+          "url",
+          "title",
+          "published_at",
+          "accessed_at"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "claims": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sourced_fact",
+              "interpretation",
+              "scenario"
+            ]
+          },
+          "source_keys": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "required": [
+          "text",
+          "kind",
+          "source_keys"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "catalysts": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "asset_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 120,
+                "pattern": "^[a-z][a-z_]*:[A-Za-z0-9._:/-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timing_precision": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "date",
+              "unknown"
+            ]
+          },
+          "source_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "title",
+          "asset_key",
+          "expected_at",
+          "timing_precision",
+          "source_key",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "supersedes_report_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "related_report_ids": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      }
+    },
+    "event_key": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[\\w:.-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "is_demo": {
+      "type": "boolean"
+    },
+    "disagreements": {
+      "default": [],
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "report_ids": {
+            "minItems": 2,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "report_ids",
+          "explanation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missing_desks": {
+      "default": [],
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "macro",
+          "commodities",
+          "equities",
+          "crypto",
+          "chief_of_staff"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "submission_id",
+    "desk_slug",
+    "report_type",
+    "researched_at",
+    "title",
+    "summary",
+    "body_markdown",
+    "what_changed",
+    "importance",
+    "importance_reason",
+    "time_horizon",
+    "thesis",
+    "invalidation",
+    "risks",
+    "evidence_gap",
+    "assets",
+    "sources",
+    "claims",
+    "catalysts",
+    "supersedes_report_id",
+    "related_report_ids",
+    "event_key",
+    "is_demo",
+    "disagreements",
+    "missing_desks"
+  ],
+  "additionalProperties": false
+}

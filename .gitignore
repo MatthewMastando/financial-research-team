@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-demo/
+artifacts/
+.env*
+!.env.example
+playwright-report/
+test-results/
+supabase/.temp/
+supabase/.branches/
+*.local
+__pycache__/
+*.pyc
+.tools/

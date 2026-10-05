@@ -132,7 +132,72 @@ export const demoReports: Report[] = titles.map((title, i) => ({
         watchlist_action: "suggest",
         reason:
           "Explicit synthetic thesis with an upcoming evidence checkpoint.",
+        ...(i === 0 || i === 2 || i === 3
+          ? {
+              positioning: {
+                stance: i === 3 ? "short_bias" : "long_bias",
+                action: "wait",
+                rationale:
+                  "Synthetic scenario: wait for the stated confirmation before considering an entry.",
+              },
+              trade_setup: {
+                direction: i === 3 ? "short" : "long",
+                status: "conditional",
+                timeframe: "Illustrative multi-day setup",
+                entry_condition:
+                  "Synthetic example: enter only after confirmation and a successful retest.",
+                entry_zone:
+                  "The confirmed retest zone; no current price is assumed.",
+                stop_loss:
+                  "Below the confirmation low for a long; above the rejection high for a short.",
+                targets: [
+                  "First illustrative target: prior range boundary",
+                  "Second illustrative target: reassess after the catalyst",
+                ],
+                sizing_guidance:
+                  "Set a risk budget before entry; no account size is assumed.",
+                invalidation:
+                  "The confirmation fails or the underlying premise is contradicted.",
+                instructions:
+                  "1. Confirm the catalyst and exact instrument.\n2. Wait for the entry trigger.\n3. Define risk and position size before entry.\n4. Cancel the idea if invalidated.\nSynthetic instructions only; no current recommendation.",
+                valid_until: null,
+              },
+            }
+          : {}),
       },
+      ...(i === 1
+        ? [
+            {
+              asset_key: demoAssets[4].asset_key,
+              relationship: "subject",
+              watchlist_action: "suggest",
+              reason:
+                "Synthetic research-only contract identification example.",
+              positioning: {
+                stance: "watch_only",
+                action: "wait",
+                rationale:
+                  "Confirm the venue and expiry before considering this illustrative instrument.",
+              },
+              trade_setup: {
+                direction: null,
+                status: "idea",
+                timeframe: null,
+                entry_condition:
+                  "Confirm the exact contract and independently verify the entry trigger.",
+                entry_zone: null,
+                stop_loss: null,
+                targets: [],
+                sizing_guidance: null,
+                invalidation:
+                  "The reported contract identity cannot be confirmed.",
+                instructions:
+                  "Identify the venue and expiry. Keep the idea on the watchlist while those details remain unresolved.",
+                valid_until: null,
+              },
+            },
+          ]
+        : []),
     ],
     catalysts:
       i === 4

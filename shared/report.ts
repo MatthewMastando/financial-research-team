@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { positioningSchema, tradeSetupSchema } from "./guidance.ts";
 
 export const desks = [
   "macro",
@@ -71,6 +72,8 @@ export const reportSchema = z
             relationship: z.enum(["subject", "exposure", "context"]),
             watchlist_action: z.enum(["suggest", "none"]),
             reason: short,
+            positioning: positioningSchema.nullable().optional(),
+            trade_setup: tradeSetupSchema.nullable().optional(),
           })
           .strict(),
       )
@@ -163,6 +166,22 @@ export const reportSchema = z
     if (new Set(r.related_report_ids).size !== r.related_report_ids.length)
       issue(["related_report_ids"], "Report references must be unique");
     const keys = new Set(r.sources.map((s) => s.source_key));
+    r.assets.forEach((a, i) => {
+      if (a.relationship === "context" && (a.positioning || a.trade_setup))
+        issue(
+          ["assets", i],
+          "Context mentions cannot carry positioning or trade setups",
+        );
+      if (
+        a.trade_setup?.valid_until &&
+        a.trade_setup.status === "ready" &&
+        Date.parse(a.trade_setup.valid_until) <= Date.parse(r.researched_at)
+      )
+        issue(
+          ["assets", i, "trade_setup", "valid_until"],
+          "A ready setup cannot already have expired at research time",
+        );
+    });
     r.claims.forEach((c, i) => {
       if (
         c.source_keys.some((k) => !keys.has(k)) ||

@@ -1,5 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Report } from "../../shared/report";
+import {
+  tradeSetupSchema,
+  type AssetGuidance,
+  type PersonalPlan,
+  type TradeSetup,
+} from "../../shared/guidance";
 import type { Instrument, Quote, QuoteSnapshot } from "../../shared/quotes";
 import { demoAssets, demoQuotes, demoReports } from "./demo";
 export const isDemo = import.meta.env.VITE_DEMO_MODE === "true";
@@ -345,4 +351,104 @@ export async function assetTheses(asset: string): Promise<Report[]> {
   });
   if (error) throw error;
   return rows ?? [];
+}
+
+async function batchedRead<T>(name: string, ids: string[]): Promise<T[]> {
+  const unique = [...new Set(ids)];
+  const rows: T[] = [];
+  for (let i = 0; i < unique.length; i += 50) {
+    const { data, error } = await db!.rpc(name, {
+      p_asset_ids: unique.slice(i, i + 50),
+    });
+    if (error) throw error;
+    rows.push(...(data ?? []));
+  }
+  return rows;
+}
+export async function assetGuidance(ids: string[]): Promise<AssetGuidance[]> {
+  if (!isDemo) return batchedRead("asset_guidance", ids);
+  const rows = new Map<string, AssetGuidance>();
+  const ordered = [...demoReports]
+    .filter((r) => r.is_current)
+    .sort(
+      (a, b) =>
+        b.researched_at.localeCompare(a.researched_at) ||
+        b.received_at.localeCompare(a.received_at) ||
+        b.id.localeCompare(a.id),
+    );
+  for (const r of ordered)
+    for (const reference of r.assets) {
+      const asset = demoAssets.find((a) => a.asset_key === reference.asset_key);
+      if (
+        !asset ||
+        !ids.includes(asset.id) ||
+        reference.relationship === "context"
+      )
+        continue;
+      const key = asset.id + ":" + r.desk_slug;
+      if (rows.has(key)) continue;
+      rows.set(key, {
+        asset_id: asset.id,
+        asset_key: asset.asset_key,
+        report_id: r.id,
+        report_title: r.title,
+        desk_slug: r.desk_slug,
+        researched_at: r.researched_at,
+        received_at: r.received_at,
+        time_horizon: r.time_horizon,
+        positioning: reference.positioning ?? null,
+        trade_setup: reference.trade_setup ?? null,
+        reason: reference.reason,
+        thesis: r.thesis,
+        invalidation: r.invalidation,
+      });
+    }
+  return [...rows.values()];
+}
+export async function personalTradePlans(
+  ids: string[],
+): Promise<PersonalPlan[]> {
+  if (isDemo)
+    return saved<PersonalPlan[]>("plans", []).filter((p) =>
+      ids.includes(p.asset_id),
+    );
+  return batchedRead("personal_trade_plans", ids);
+}
+export async function savePersonalPlan(
+  assetId: string,
+  expectedRevision: number,
+  plan: TradeSetup,
+): Promise<PersonalPlan> {
+  const parsed = tradeSetupSchema.parse(plan);
+  if (
+    parsed.status === "ready" &&
+    parsed.valid_until &&
+    Date.parse(parsed.valid_until) <= Date.now()
+  )
+    throw new Error("A ready plan cannot already have expired.");
+  if (isDemo) {
+    const plans = saved<PersonalPlan[]>("plans", []);
+    if (
+      (plans.find((p) => p.asset_id === assetId)?.revision ?? 0) !==
+      expectedRevision
+    )
+      throw Object.assign(new Error("Plan changed. Reload before saving."), {
+        code: "40001",
+      });
+    const next = {
+      asset_id: assetId,
+      revision: expectedRevision + 1,
+      plan: parsed,
+      created_at: new Date().toISOString(),
+    };
+    save("plans", [...plans.filter((p) => p.asset_id !== assetId), next]);
+    return next;
+  }
+  const { data, error } = await db!
+    .from("trade_plan_revisions")
+    .insert({ asset_id: assetId, revision: expectedRevision + 1, plan: parsed })
+    .select("asset_id,revision,plan,created_at")
+    .single();
+  if (error) throw error;
+  return data;
 }

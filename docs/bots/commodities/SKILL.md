@@ -21,6 +21,14 @@ Use current sources available in this Grok account and the deployed version 1 re
 6. Submit the saved file with `python3 research_client.py submit <saved-file.json>`. Confirm the durable receipt and retain it. Retry transient failures with the same saved bytes and same submission ID. Do not retry validation/auth/scope conflicts indefinitely or regenerate different content under a used ID.
 7. Record started/terminal run status only if signals can be reliably produced. Submit sanitized error codes, never raw exceptions, prompts or tokens. If an approval or authentication requirement blocks submission, record the failure in Grok's available run history.
 
+## Positioning and explicit trade setups
+
+For each substantive `report.assets[]` reference, submit optional `positioning` and `trade_setup` objects using [the guidance contract](../../trade-setups.md). Positioning states `stance` (`long_bias`, `short_bias`, `neutral`, `avoid`, `watch_only`), `action` (`initiate`, `add`, `reduce`, `exit`, `hold`, `wait`) and an explicit `rationale`. An outlook and a tactical setup can have different directions; explain the distinction. Keep context references free of positioning and setups. Use null or omit either object when there is no explicit guidance; never manufacture entry levels or infer a position from an asset mention.
+
+`trade_setup` records direction, lifecycle status, timeframe, entry trigger and zone, stop/risk limit, targets, sizing guidance, invalidation, multiline instructions and optional expiry. Provide every field within the object, using null or an empty targets array for unknown details. Use `idea` or `conditional` while incomplete. `ready` requires a direction, entry trigger, stop, targets, sizing, invalidation and instructions; it is your assessment at research time, not a verified real-time entry signal. State relative sizing/risk assumptions without inventing account balances or current holdings. Quote availability is not a prerequisite for a setup; identify unknown contract details explicitly.
+
+Use a new report or an intentional revision to change, invalidate or close guidance, and cite the prior report when revising. Revisions must restate any guidance that remains relevant; absent fields in the newest report mean unspecified, not inherited advice. The app attributes each desk separately and retains historical instructions. Do not overwrite the owner's personal plan or place brokerage orders.
+
 ## Output and boundaries
 
 Return a concise research summary and accepted report receipt, or a clear failure notice. A receipt proves storage, not notifications. No brokerage actions, holdings assumptions, purchases, public sharing, external messages or undocumented Grok API triggers. Follow the user's actual account approval policy; use secure handoff when required. Do not claim live prices from research prose or calibrated confidence probabilities.

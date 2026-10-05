@@ -46,3 +46,7 @@ No production backup or restore was performed. The archive must not be represent
 ## Research-only registry update
 
 Every structured production report asset now receives a catalog link. Unknown identities have an explicit Research only state; price availability is independent of watchlist eligibility. Local tests cover simultaneous registration, unknown futures without invented expiry, exact-key legacy backfill, preserved report payload/evidence and pinned/dismissed choices, and synthetic isolation. Provider tests cover MU/VST/ETH/ETF database mappings and refresh scaling. Settings reports observed account access through actual quotes, not presumed subscription coverage.
+
+## Positioning and trade setups update
+
+63 contract/API/database/provider/Markdown checks passed in both PGlite and PostgreSQL 17; the nine new cases cover backward-compatible payloads, ready-setup completeness and expiry, no actionable context mentions, separate tactical direction, unknown/unpriced assets, latest/retracted guidance, attributed opposing views, owner-only immutable plans and simultaneous/stale saves. All 12 Chromium journeys passed, with automated WCAG checks on overview and watchlist. Browser coverage adds explicit badges and expandable instructions, saving a plan without prices, ready-state validation, direction filtering and preserving a stale editor's draft through a background refresh and concurrent save. Updated synthetic captures remain separate from production research. Hosted verification is recorded in [the deployment record](supabase-deployment.md).

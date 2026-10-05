@@ -31,6 +31,7 @@ import {
   ArrowUp,
   Bell,
   Check,
+  ClipboardList,
   ChevronDown,
   Compass,
   ExternalLink,
@@ -57,6 +58,14 @@ import {
 } from "../shared/report";
 import { quoteState, type Instrument, type Quote } from "../shared/quotes";
 import * as data from "./lib/data";
+import {
+  GuidanceList,
+  PersonalPlanEditor,
+  PersonalPlanSummary,
+  SetupDetails,
+  useGuidance,
+  usePersonalPlans,
+} from "./components/Guidance";
 import { useAuth } from "./lib/auth";
 
 const deskClass = (s: string) => `desk-${s}`;
@@ -163,7 +172,15 @@ function DeskMark({ slug }: { slug: string }) {
     </span>
   );
 }
-function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
+function QuoteValue({
+  q,
+  compact = false,
+  collapseDetails = false,
+}: {
+  q?: Quote;
+  compact?: boolean;
+  collapseDetails?: boolean;
+}) {
   const format = useTime();
   const state = q ? quoteState(q) : "unavailable";
   const price =
@@ -198,17 +215,42 @@ function QuoteValue({ q, compact = false }: { q?: Quote; compact?: boolean }) {
         {q?.pricing_state === "research_only" ? "Research only" : state}
         {!compact && q?.quote_time ? ` · ${format(q.quote_time)}` : ""}
       </small>
-      {!compact && q?.change_basis && <small>{label(q.change_basis)}</small>}
-      {!compact && q?.provider && (
-        <small>
-          {q.provider}
-          {q.provider_venue ? ` · ${q.provider_venue}` : ""}
-        </small>
-      )}
-      {!compact && q?.coverage_note && <small>{q.coverage_note}</small>}
-      {!compact && q?.unavailable_reason && (
-        <small>{q.unavailable_reason}</small>
-      )}
+      {!compact &&
+        (collapseDetails ? (
+          <details className="quote-disclosure">
+            <summary>Quote details</summary>{" "}
+            {!compact && q?.change_basis && (
+              <small>{label(q.change_basis)}</small>
+            )}
+            {!compact && q?.provider && (
+              <small>
+                {q.provider}
+                {q.provider_venue ? ` · ${q.provider_venue}` : ""}
+              </small>
+            )}
+            {!compact && q?.coverage_note && <small>{q.coverage_note}</small>}
+            {!compact && q?.unavailable_reason && (
+              <small>{q.unavailable_reason}</small>
+            )}
+          </details>
+        ) : (
+          <>
+            {" "}
+            {!compact && q?.change_basis && (
+              <small>{label(q.change_basis)}</small>
+            )}
+            {!compact && q?.provider && (
+              <small>
+                {q.provider}
+                {q.provider_venue ? ` · ${q.provider_venue}` : ""}
+              </small>
+            )}
+            {!compact && q?.coverage_note && <small>{q.coverage_note}</small>}
+            {!compact && q?.unavailable_reason && (
+              <small>{q.unavailable_reason}</small>
+            )}
+          </>
+        ))}
     </div>
   );
 }
@@ -827,6 +869,39 @@ function Reader() {
                 {r.retraction_reason ?? "Reason recorded in report history"}
               </div>
             )}
+            {r.assets.filter((a) => a.relationship !== "context").length >
+              0 && (
+              <section className="report-guidance">
+                <h2>Positioning & trade setups</h2>
+                {r.assets
+                  .filter((a) => a.relationship !== "context")
+                  .map((a) => (
+                    <div key={a.asset_key}>
+                      <h3>{a.asset_key}</h3>
+                      <GuidanceList
+                        historical={!r.is_current || Boolean(r.retracted)}
+                        rows={[
+                          {
+                            asset_id: a.asset_key,
+                            asset_key: a.asset_key,
+                            report_id: r.id,
+                            report_title: r.title,
+                            desk_slug: r.desk_slug,
+                            researched_at: r.researched_at,
+                            received_at: r.received_at,
+                            time_horizon: r.time_horizon,
+                            positioning: a.positioning ?? null,
+                            trade_setup: a.trade_setup ?? null,
+                            reason: a.reason,
+                            thesis: r.thesis,
+                            invalidation: r.invalidation,
+                          },
+                        ]}
+                      />
+                    </div>
+                  ))}
+              </section>
+            )}
             <section className="changed">
               <p className="eyebrow">What changed</p>
               <p>{r.what_changed}</p>
@@ -1029,6 +1104,8 @@ function Watchlist({ panel = false }: { panel?: boolean }) {
       ? e.dismissed
       : !e.dismissed && (e.pinned || Date.parse(e.expires_at) > Date.now()),
   );
+  const guidance = useGuidance((visible ?? []).map((e) => e.asset_id));
+  const plans = usePersonalPlans((visible ?? []).map((e) => e.asset_id));
   return (
     <>
       {panel ? (
@@ -1050,10 +1127,11 @@ function Watchlist({ panel = false }: { panel?: boolean }) {
           <div className="page-intro">
             <p className="eyebrow">Evidence before conviction</p>
             <h1>Watchlist</h1>
-            <p>
-              Ideas supported by research, with room for your own priorities.
-            </p>
+            <p>Desk positioning, entry conditions and your own trade plans.</p>
           </div>
+          <Link className="text-link" to="/trade-setups">
+            Open trade setups <ArrowRight size={16} />
+          </Link>
           <div className="tabs">
             <button
               className={!showDismissed ? "active" : ""}
@@ -1092,8 +1170,29 @@ function Watchlist({ panel = false }: { panel?: boolean }) {
                     <QuoteValue
                       q={prices.data?.find((p) => p.asset_id === e.asset_id)}
                       compact={panel}
+                      collapseDetails={!panel}
                     />
                   </div>
+                  {guidance.isPending ? (
+                    <p role="status">Loading positioning…</p>
+                  ) : guidance.isError ? (
+                    <p className="error" role="alert">
+                      Positioning could not be loaded.{" "}
+                      <button
+                        className="text-link"
+                        onClick={() => guidance.refetch()}
+                      >
+                        Try again
+                      </button>
+                    </p>
+                  ) : (
+                    <GuidanceList
+                      rows={(guidance.data ?? []).filter(
+                        (g) => g.asset_id === e.asset_id,
+                      )}
+                      compact={panel}
+                    />
+                  )}
                   <div className="watch-reason">
                     <Tag kind={e.pinned ? "accent-tag" : "muted"}>
                       {e.pinned ? "User pinned" : "Research suggestion"}
@@ -1121,6 +1220,18 @@ function Watchlist({ panel = false }: { panel?: boolean }) {
                         />
                       ))}
                     </div>
+                  )}
+                  {plans.isPending ? (
+                    <small>Loading your plan…</small>
+                  ) : plans.isError ? (
+                    <small className="error">
+                      Your plan could not be loaded.
+                    </small>
+                  ) : (
+                    <PersonalPlanSummary
+                      plan={plans.data?.find((p) => p.asset_id === e.asset_id)}
+                      assetId={e.asset_id}
+                    />
                   )}
                   <div className="watch-actions">
                     <button
@@ -1180,6 +1291,126 @@ function Watchlist({ panel = false }: { panel?: boolean }) {
     </>
   );
 }
+function TradeSetups() {
+  const assets = useAssets();
+  const guidance = useGuidance((assets.data ?? []).map((a) => a.id));
+  const plans = usePersonalPlans((assets.data ?? []).map((a) => a.id));
+  const [direction, setDirection] = useState("all");
+  const [assetId, setAssetId] = useState("");
+  const navigate = useNavigate();
+  const visible = (assets.data ?? []).filter((a) => {
+    const rows = (guidance.data ?? []).filter((g) => g.asset_id === a.id);
+    const personal = plans.data?.find((p) => p.asset_id === a.id);
+    if (!rows.length && !personal) return false;
+    if (direction === "all") return true;
+    if (direction === "unspecified")
+      return (
+        !personal?.plan.direction && !rows.some((g) => g.trade_setup?.direction)
+      );
+    return (
+      personal?.plan.direction === direction ||
+      rows.some((g) => g.trade_setup?.direction === direction)
+    );
+  });
+  return (
+    <>
+      <div className="page-intro">
+        <p className="eyebrow">From research to a plan</p>
+        <h1>Trade setups</h1>
+        <p>
+          Each desk’s positioning and explicit instructions, alongside your
+          saved plans.
+        </p>
+      </div>
+      <div className="setup-toolbar">
+        <label>
+          Setup direction
+          <select
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+          >
+            <option value="all">All directions</option>
+            <option value="long">Long setups</option>
+            <option value="short">Short setups</option>
+            <option value="unspecified">Direction not specified</option>
+          </select>
+        </label>
+        <label>
+          Plan for an asset
+          <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+            <option value="">Choose an asset</option>
+            {assets.data?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.symbol} · {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="subtle"
+          disabled={!assetId}
+          onClick={() => navigate(`/assets/${assetId}#your-plan`)}
+        >
+          Open your plan
+        </button>
+      </div>
+      <LoadState query={assets}>
+        {(assets.data?.length ?? 0) > 0 && (
+          <LoadState query={guidance}>
+            <LoadState query={plans}>
+              {visible.length ? (
+                <div className="watch-list">
+                  {visible.map((a) => (
+                    <article className="watch-item" key={a.id}>
+                      <div className="watch-top">
+                        <div>
+                          <Link className="watch-symbol" to={`/assets/${a.id}`}>
+                            {a.symbol}
+                          </Link>
+                          <small>{a.name}</small>
+                        </div>
+                        <Link
+                          className="text-link"
+                          to={`/assets/${a.id}#your-plan`}
+                        >
+                          Your plan →
+                        </Link>
+                      </div>
+                      <GuidanceList
+                        rows={(guidance.data ?? []).filter(
+                          (g) => g.asset_id === a.id,
+                        )}
+                      />
+                      {plans.data?.find((p) => p.asset_id === a.id) && (
+                        <section className="personal-plan">
+                          <h3>Your trade plan</h3>
+                          <SetupDetails
+                            setup={
+                              plans.data.find((p) => p.asset_id === a.id)!.plan
+                            }
+                          />
+                        </section>
+                      )}
+                      <PersonalPlanSummary
+                        plan={plans.data?.find((p) => p.asset_id === a.id)}
+                        assetId={a.id}
+                      />
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <Empty title="No setups in this view">
+                  Choose an asset to create your plan. Bot setups appear when
+                  explicit instructions are submitted.
+                </Empty>
+              )}
+            </LoadState>
+          </LoadState>
+        )}
+      </LoadState>
+    </>
+  );
+}
 function AssetDetail() {
   const { id } = useParams();
   const a = useAssets();
@@ -1203,6 +1434,7 @@ function AssetDetail() {
     enabled: Boolean(asset),
   });
   const current = theses.data;
+  const guidance = useGuidance(asset ? [asset.id] : []);
   return (
     <>
       <Link to="/watchlist" className="back-link">
@@ -1235,6 +1467,11 @@ function AssetDetail() {
               Historical prices are not configured. A chart will appear only
               when permitted provider data is available.
             </p>
+            <SectionHeading title="Current positioning & trade setups" />
+            <LoadState query={guidance}>
+              <GuidanceList rows={guidance.data ?? []} />
+            </LoadState>
+            <PersonalPlanEditor key={asset.id} asset={asset} />
             <SectionHeading title="Current desk theses" />
             <LoadState query={theses}>
               {current?.length ? (
@@ -1799,6 +2036,7 @@ function Workspace() {
     { path: "/", label: "Overview", icon: LayoutDashboard },
     { path: "/research", label: "Research", icon: Layers },
     { path: "/watchlist", label: "Watchlist", icon: Compass },
+    { path: "/trade-setups", label: "Setups", icon: ClipboardList },
     { path: "/alerts", label: "Alerts", icon: Bell },
   ];
   const auxiliary =
@@ -1921,6 +2159,7 @@ function Workspace() {
               <Route path="/research" element={<Research />} />
               <Route path="/research/:id" element={<Reader />} />
               <Route path="/watchlist" element={<Watchlist />} />
+              <Route path="/trade-setups" element={<TradeSetups />} />
               <Route path="/assets/:id" element={<AssetDetail />} />
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/settings" element={<Settings />} />
@@ -1952,7 +2191,7 @@ function Workspace() {
                   keep the perspective.
                 </p>
                 <small>
-                  Research ideas are not holdings or instructions to trade.
+                  Research setups and personal plans do not place orders.
                 </small>
               </div>
             </aside>

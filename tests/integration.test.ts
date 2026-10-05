@@ -839,3 +839,245 @@ describe("database security catalog", () => {
     ).rejects.toThrow(/valid_display_timezone/);
   });
 });
+
+describe("positioning, setups and owner plans", () => {
+  const setup = {
+    direction: "long",
+    status: "conditional",
+    timeframe: "Days",
+    entry_condition: "Wait for confirmation",
+    entry_zone: null,
+    stop_loss: "Below the invalidation level",
+    targets: ["Prior high"],
+    sizing_guidance: "Define risk budget",
+    invalidation: "Confirmation fails",
+    instructions: "Confirm the exact instrument.\nWait for the trigger.",
+    valid_until: null,
+  };
+  const reference = (key: string, structured = true) => ({
+    asset_key: key,
+    relationship: "subject" as const,
+    watchlist_action: "suggest" as const,
+    reason: "Explicit asset research",
+    ...(structured
+      ? {
+          positioning: {
+            stance: "long_bias" as const,
+            action: "wait" as const,
+            rationale: "Wait for evidence",
+          },
+          trade_setup: setup as any,
+        }
+      : {}),
+  });
+  const newAsset = async () => {
+    const key = "future:TEST:" + randomUUID();
+    const receipt = await ingest(
+      payload({ assets: [reference(key)], catalysts: [] }),
+    );
+    const asset = (
+      await h.db.query("select * from assets where asset_key=$1", [key])
+    ).rows[0];
+    return { asset, key, receipt };
+  };
+  it("persists explicit guidance, links unknown instruments and keeps them actionable without quotes", async () => {
+    const { asset, key, receipt } = await newAsset();
+    expect(asset.identity_verified).toBe(false);
+    const rows = await h.asUser(OWNER, (s) =>
+      s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+    );
+    expect(rows.rows[0].value).toMatchObject({
+      asset_key: key,
+      report_id: receipt.report_id,
+      positioning: { stance: "long_bias", action: "wait" },
+      trade_setup: { instructions: setup.instructions },
+    });
+    await h.rpc.rpc("process_research_jobs", { p_limit: 50 });
+    expect(
+      (
+        await h.asUser(OWNER, (s) =>
+          s.query("select * from watchlist_entries where asset_id=$1", [
+            asset.id,
+          ]),
+        )
+      ).rows,
+    ).toHaveLength(1);
+  });
+  it("never restores older advice when a newer current report omits it or is retracted", async () => {
+    const { asset, key, receipt } = await newAsset();
+    const revision = await ingest(
+      payload({
+        report_type: "thesis_revision",
+        supersedes_report_id: receipt.report_id,
+        assets: [reference(key, false)],
+        catalysts: [],
+        researched_at: new Date(Date.now() + 1000).toISOString(),
+      }),
+    );
+    const current = (
+      await h.asUser(OWNER, (s) =>
+        s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+      )
+    ).rows;
+    expect(current).toHaveLength(1);
+    expect(current[0].value).toMatchObject({
+      report_id: revision.report_id,
+      positioning: null,
+      trade_setup: null,
+    });
+    const historical = (
+      await h.asUser(OWNER, (s) =>
+        s.query("select report_history($1) as value", [receipt.report_id]),
+      )
+    ).rows;
+    expect(
+      historical.find((r) => r.value.id === receipt.report_id).value.assets[0]
+        .trade_setup.instructions,
+    ).toBe(setup.instructions);
+    await h.db.query(
+      "insert into report_events(owner_id,report_id,kind,reason) values($1,$2,'retraction','Withdrawn')",
+      [OWNER, revision.report_id],
+    );
+    expect(
+      (
+        await h.asUser(OWNER, (s) =>
+          s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("keeps opposing desks separately attributed and ignores synthetic/context guidance", async () => {
+    const { asset, key } = await newAsset();
+    const cryptoId = randomUUID();
+    await h.db.query(
+      "insert into private.bot_credentials(id,owner_id,bot_id,desk_slug,token_hash,scopes,report_types) values($1,$2,$3,'crypto',$4,array['reports:write'],array['morning_scan'])",
+      [cryptoId, OWNER, randomUUID(), randomUUID()],
+    );
+    const other = payload({
+      desk_slug: "crypto",
+      assets: [
+        {
+          ...reference(key),
+          positioning: {
+            stance: "short_bias",
+            action: "wait",
+            rationale: "Opposing scenario",
+          },
+        },
+      ],
+      catalysts: [],
+    });
+    const result = await h.rpc.rpc("ingest_report", {
+      p_credential: cryptoId,
+      p_payload: reportSchema.parse(other),
+    });
+    expect(result.error).toBeNull();
+    await ingest(
+      payload({
+        is_demo: true,
+        assets: [reference(key)],
+        catalysts: [],
+        researched_at: new Date(Date.now() + 60000).toISOString(),
+      }),
+    );
+    const rows = (
+      await h.asUser(OWNER, (s) =>
+        s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+      )
+    ).rows.map((r) => r.value);
+    expect(rows.map((r) => r.desk_slug).sort()).toEqual(["crypto", "macro"]);
+    expect(new Set(rows.map((r) => r.positioning.stance))).toEqual(
+      new Set(["short_bias", "long_bias"]),
+    );
+    expect(
+      (
+        await h.asUser(OTHER, (s) =>
+          s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+        )
+      ).rows,
+    ).toHaveLength(0);
+    await expect(
+      h.asUser(null, (s) =>
+        s.query("select asset_guidance($1::uuid[]) as value", [[asset.id]]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      h.asUser(OWNER, (s) =>
+        s.query("select asset_guidance($1::uuid[])", [
+          Array(51).fill(asset.id),
+        ]),
+      ),
+    ).rejects.toThrow(/at most 50/);
+  });
+  it("saves owner-only immutable plan revisions and rejects stale or simultaneous edits", async () => {
+    const { asset } = await newAsset();
+    const insert = (user: string, rev: number, plan: unknown = setup) =>
+      h.asUser(user, (s) =>
+        s.query(
+          "insert into trade_plan_revisions(asset_id,revision,plan) values($1,$2,$3) returning *",
+          [asset.id, rev, JSON.stringify(plan)],
+        ),
+      );
+    await insert(OWNER, 1);
+    await expect(insert(OTHER, 1)).rejects.toThrow();
+    expect(
+      (
+        await h.asUser(OTHER, (s) =>
+          s.query("select personal_trade_plans($1::uuid[]) as value", [
+            [asset.id],
+          ]),
+        )
+      ).rows,
+    ).toHaveLength(0);
+    await expect(
+      h.asUser(null, (s) => s.query("select * from trade_plan_revisions")),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      insert(OWNER, 2, { ...setup, status: "ready", stop_loss: null }),
+    ).rejects.toThrow(/check constraint/);
+    await expect(
+      insert(OWNER, 2, { ...setup, direction: { long: true } }),
+    ).rejects.toThrow(/check constraint/);
+    await expect(
+      insert(OWNER, 2, { ...setup, unexpected: "field" }),
+    ).rejects.toThrow(/check constraint/);
+    const race = await Promise.allSettled([
+      insert(OWNER, 2, { ...setup, instructions: "First edit" }),
+      insert(OWNER, 2, { ...setup, instructions: "Second edit" }),
+    ]);
+    expect(race.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(race.filter((r) => r.status === "rejected")).toHaveLength(1);
+    await expect(insert(OWNER, 2)).rejects.toThrow(/Reload/);
+    const current = (
+      await h.asUser(OWNER, (s) =>
+        s.query("select personal_trade_plans($1::uuid[]) as value", [
+          [asset.id],
+        ]),
+      )
+    ).rows;
+    expect(current).toHaveLength(1);
+    expect(current[0].value.revision).toBe(2);
+    expect(
+      (
+        await h.asUser(OWNER, (s) =>
+          s.query("select * from trade_plan_revisions where asset_id=$1", [
+            asset.id,
+          ]),
+        )
+      ).rows,
+    ).toHaveLength(2);
+    await expect(
+      h.asUser(OWNER, (s) =>
+        s.query("update trade_plan_revisions set plan=$1 where asset_id=$2", [
+          JSON.stringify(setup),
+          asset.id,
+        ]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      h.db.query("delete from trade_plan_revisions where asset_id=$1", [
+        asset.id,
+      ]),
+    ).rejects.toThrow(/append-only/);
+  });
+});

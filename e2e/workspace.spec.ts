@@ -86,6 +86,7 @@ for (const width of [320, 390, 768, 1440])
       "/",
       "/research",
       "/watchlist",
+      "/trade-setups",
       "/alerts",
       "/settings",
       "/assets/10000000-0000-4000-8000-000000000003",
@@ -183,4 +184,155 @@ test("offline notice and long unbroken headlines remain usable on narrow screens
   ).toBeVisible();
   await context.setOffline(false);
   await expect(page.locator(".offline-banner")).toHaveCount(0);
+});
+
+test("positioning is explicit, setup instructions are readable and personal plans work without quotes", async ({
+  page,
+}) => {
+  await page.goto("/watchlist");
+  const apple = page
+    .locator("main .watch-item")
+    .filter({ has: page.getByRole("link", { name: "AAPL", exact: true }) });
+  await expect(apple.getByText("Long bias", { exact: true })).toBeVisible();
+  await expect(
+    apple.getByText("Wait for trigger", { exact: true }),
+  ).toBeVisible();
+  await apple
+    .locator("summary")
+    .filter({ hasText: "Trade setup instructions" })
+    .click();
+  await expect(apple.getByText("Entry trigger", { exact: true })).toBeVisible();
+  await expect(
+    apple.getByText("Sizing guidance", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    apple.getByText("Trade setup instructions", { exact: true }).last(),
+  ).toBeVisible();
+  const gold = page
+    .locator("main .watch-item")
+    .filter({ has: page.getByRole("link", { name: "Gold", exact: true }) });
+  await expect(
+    gold.getByText("Positioning not specified", { exact: true }),
+  ).toBeVisible();
+  const m6e = page
+    .locator("main .watch-item")
+    .filter({ has: page.getByRole("link", { name: "M6E", exact: true }) });
+  await expect(m6e.getByText("Watch only", { exact: true })).toBeVisible();
+  await expect(m6e.getByText("No live price", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement)?.blur();
+    window.scrollTo(0, 0);
+  });
+  await page.screenshot({
+    path: "docs/verification/watchlist-positioning-1440.png",
+    fullPage: true,
+  });
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+  await m6e.getByRole("link", { name: "Add your trade plan" }).click();
+  await page.getByRole("button", { name: "Create your plan" }).click();
+  await page.getByLabel("Setup status").selectOption("ready");
+  await page
+    .getByRole("button", { name: "Save your plan", exact: true })
+    .click();
+  await expect(page.locator(".plan-form [role=alert]")).toContainText(
+    "Ready setups require",
+  );
+  await page.getByLabel("Setup status").selectOption("conditional");
+  await page
+    .getByRole("combobox", { name: "Direction", exact: true })
+    .selectOption("long");
+  await page
+    .getByLabel("Entry trigger", { exact: true })
+    .fill("Confirm exact contract and retest");
+  await page
+    .getByRole("textbox", { name: "Trade setup instructions", exact: true })
+    .fill(
+      "My instructions: verify venue and expiry.\nWait for independent confirmation.",
+    );
+  await page
+    .getByRole("button", { name: "Save your plan", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Edit your plan" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".personal-plan")).toContainText(
+    "My instructions: verify venue and expiry.",
+  );
+  await expect(page.locator(".asset-intro .quote")).toContainText(
+    "No live price",
+  );
+  await page.goto("/trade-setups");
+  await expect(
+    page.getByRole("heading", { name: "Trade setups", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".personal-plan")).toContainText(
+    "My instructions: verify venue and expiry.",
+  );
+  await page.getByLabel("Setup direction").selectOption("long");
+  await expect(page.locator("main .watch-symbol")).toContainText([
+    "EUR/USD",
+    "AAPL",
+    "M6E",
+  ]);
+  await page.getByLabel("Setup direction").selectOption("short");
+  await expect(page.locator("main .watch-symbol")).toHaveText(["BTC"]);
+});
+
+test("a stale personal-plan editor keeps its draft and cannot overwrite a newer save", async ({
+  page,
+  context,
+}) => {
+  const route = "/assets/10000000-0000-4000-8000-000000000005";
+  await page.goto(route);
+  await page.getByRole("button", { name: "Create your plan" }).click();
+  await page
+    .getByRole("textbox", { name: "Trade setup instructions", exact: true })
+    .fill("Original plan");
+  await page
+    .getByRole("button", { name: "Save your plan", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Edit your plan" }).click();
+  await page
+    .getByRole("textbox", { name: "Trade setup instructions", exact: true })
+    .fill("Stale unsaved draft");
+  const second = await context.newPage();
+  await second.goto(route);
+  await second.getByRole("button", { name: "Edit your plan" }).click();
+  await second
+    .getByRole("textbox", { name: "Trade setup instructions", exact: true })
+    .fill("Newer saved plan");
+  await second
+    .getByRole("button", { name: "Save your plan", exact: true })
+    .click();
+  await expect(second.locator(".personal-plan")).toContainText("Revision 2");
+  // Returning to a visible page refetches current storage while retaining the draft's base revision.
+  await page.bringToFront();
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect(page.locator(".plan-form")).toContainText(
+    "Editing from revision 1",
+  );
+  await page
+    .getByRole("button", { name: "Save your plan", exact: true })
+    .click();
+  await expect(page.locator(".plan-form [role=alert]")).toContainText(
+    "A newer plan was saved",
+  );
+  await expect(
+    page.getByRole("textbox", {
+      name: "Trade setup instructions",
+      exact: true,
+    }),
+  ).toHaveValue("Stale unsaved draft");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator(".personal-plan")).toContainText(
+    "Newer saved plan",
+  );
+  await second.close();
 });
